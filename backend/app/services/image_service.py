@@ -126,8 +126,16 @@ STYLES: dict[str, dict[str, str]] = {
 }
 
 _BLOCKED = re.compile(
-    r"\b(nud|nude|naked|nsfw|porn|sex(?!ual orientation)|gore|dismember|"
-    r"child\s*(abuse|porn)|csam|terrorist\s*(manual|attack)|real\s*gun\s*violence)\w*",
+    r"\b("
+    r"child\s*(abuse|porn|sex|nude|naked|erotic)|"
+    r"csam|"
+    r"underage|"
+    r"minor\s*(sex|porn|nude|naked)|"
+    r"pedo|paedo|lolita|"
+    r"terrorist\s*(manual|attack)|"
+    r"real\s*gun\s*violence|"
+    r"gore|dismember"
+    r")\w*",
     re.I,
 )
 
