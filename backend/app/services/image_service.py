@@ -126,16 +126,8 @@ STYLES: dict[str, dict[str, str]] = {
 }
 
 _BLOCKED = re.compile(
-    r"\b("
-    r"child\s*(abuse|porn|sex|nude|naked|erotic)|"
-    r"csam|"
-    r"underage|"
-    r"minor\s*(sex|porn|nude|naked)|"
-    r"pedo|paedo|lolita|"
-    r"terrorist\s*(manual|attack)|"
-    r"real\s*gun\s*violence|"
-    r"gore|dismember"
-    r")\w*",
+    r"\b(nud|nude|naked|nsfw|porn|sex(?!ual orientation)|gore|dismember|"
+    r"child\s*(abuse|porn)|csam|terrorist\s*(manual|attack)|real\s*gun\s*violence)\w*",
     re.I,
 )
 
@@ -269,9 +261,9 @@ class ImageService:
 
     async def _fetch_horde(self, prompt: str, width: int, height: int, seed: int, model: str) -> bytes:
         """Open-model pool: several models race, the first finished render wins."""
-        names = [model] if model else list(HORDE_POOL[:3])
+        names = [model] if model else list(HORDE_POOL)
         side = max(256, min(1024, max(width, height)))
-        deadline = time.monotonic() + max(45, min(self.timeout, 150))
+        deadline = time.monotonic() + max(60, min(self.timeout, 240))
         headers = {
             "Content-Type": "application/json", "Accept": "application/json",
             "apikey": settings.image_horde_key or "0000000000",

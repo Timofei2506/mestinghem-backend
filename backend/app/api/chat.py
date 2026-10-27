@@ -642,7 +642,7 @@ async def _stream_reply(
                     break
                 except asyncio.TimeoutError:
                     waited += 8
-                    if waited > 170:
+                    if waited > 260:
                         task.cancel()
                         result = {"error": "timeout"}
                         break
