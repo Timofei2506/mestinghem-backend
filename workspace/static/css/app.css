@@ -793,3 +793,10 @@ kbd { padding: 2px 7px; border-radius: 5px; background: var(--surface-3); border
 .legal-body td { padding: 8px 12px; border-bottom: 1px solid var(--line-soft); }
 .legal-body strong { color: var(--text); }
 .legal-body a { text-decoration: underline; text-decoration-color: var(--gold-3); text-underline-offset: 3px; }
+
+/* inline media in chat (authed images loaded as object URLs) */
+.chat-inline-img{display:block;max-width:min(460px,100%);height:auto;border-radius:14px;
+  border:1px solid rgba(255,255,255,.09);box-shadow:0 10px 30px rgba(0,0,0,.45);
+  background:rgba(255,255,255,.04);margin:8px 0;cursor:zoom-in;transition:transform .18s ease,box-shadow .18s ease}
+.chat-inline-img:hover{transform:translateY(-1px);box-shadow:0 14px 38px rgba(0,0,0,.55)}
+img[data-authstate="error"]{display:none}

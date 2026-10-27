@@ -9,6 +9,33 @@
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
+  /* authed media: fetch with bearer → object URL (plain <img src> would 401) */
+  async function downloadBlob(path, name) {
+    try {
+      const u = await API.blobUrl(path);
+      const a = document.createElement('a');
+      a.href = u; a.download = name || '';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(u), 60000);
+    } catch (e) { global.App.toast('err', t('common.error'), e.message); }
+  }
+  document.addEventListener('click', (ev) => {
+    const tgt = ev.target;
+    if (!tgt || !tgt.closest) return;
+    const im = tgt.closest('img[data-img]');
+    if (im) {
+      const cur = im.currentSrc || im.src || '';
+      global.App.lightbox(cur.indexOf('blob:') === 0 ? cur : API.images.url(im.dataset.img));
+      return;
+    }
+    const el = tgt.closest('[data-dl],[data-file],[data-doc]');
+    if (!el) return;
+    ev.preventDefault();
+    if (el.dataset.dl) return downloadBlob(el.dataset.dl, el.dataset.name || '');
+    if (el.dataset.file) return downloadBlob(API.files.url(el.dataset.file), el.dataset.name || '');
+    if (el.dataset.doc) return downloadBlob(`/api/documents/${el.dataset.doc}/download`, el.dataset.name || '');
+  });
+
   const S = global.Store = {
     conversations: [],
     conversationId: null,
@@ -119,7 +146,6 @@
           <div class="conv-items" id="convItems">${spinner()}</div>
         </aside>
         <section class="chat-main">
-          <div class="chat-modes" id="chatModes"></div>
           <div class="chat-stream" id="chatStream"></div>
           <div class="composer">
             <div class="attach-row" id="attachRow"></div>
@@ -140,19 +166,6 @@
     const stream = document.getElementById('chatStream');
     const input = document.getElementById('chatInput');
     const sendBtn = document.getElementById('chatSend');
-    const modes = document.getElementById('chatModes');
-
-    modes.innerHTML = (S.modes.length ? S.modes : [
-      { id: 'assistant', label: t('rail.chat') }, { id: 'analyst', label: 'Аналитик' },
-      { id: 'writer', label: 'Редактор' }, { id: 'reason', label: 'Глубокий анализ' },
-      { id: 'code', label: 'Инженер' }, { id: 'fast', label: 'Быстро' },
-    ]).map((m) => `<button class="chip ${m.id === S.mode ? 'active' : ''}" data-mode="${m.id}">${esc(m.label)}</button>`).join('');
-    modes.querySelectorAll('[data-mode]').forEach((btn) => btn.addEventListener('click', () => {
-      S.mode = btn.dataset.mode;
-      modes.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b === btn));
-      const label = document.getElementById('engineLabel');
-      if (label) label.textContent = ({ assistant: 'mst-core', analyst: 'mst-analyst', writer: 'mst-writer', reason: 'mst-core', code: 'mst-core', fast: 'mst-lite' })[S.mode] || 'mst-core';
-    }));
 
     input.addEventListener('input', () => {
       input.style.height = 'auto';
@@ -207,6 +220,7 @@
         return;
       }
       stream.innerHTML = S.messages.map(messageHtml).join('');
+      API.hydrateImages(stream);
       stream.scrollTop = stream.scrollHeight;
     }
 
@@ -219,7 +233,7 @@
           <div class="who">${mine ? t('chat.you') : t('chat.ai')}
             ${engine ? `<span class="eng">${esc(engine)}</span>` : ''}
             <span class="muted small" style="font-weight:400">${relative(message.created_at)}</span></div>
-          <div class="bubble">${mine ? `<p>${esc(message.content).replace(/\n/g, '<br>')}</p>` : md(message.content)}</div>
+          <div class="bubble">${mine ? `<p>${esc(message.content).replace(/\n/g, '<br>')}</p>` : md(message.content) + actionCards((message.meta && message.meta.actions) || [])}</div>
           ${(message.attachments || []).length ? `<div class="chips" style="margin-top:8px">${message.attachments.map((a) => `<span class="tag">${ico('attach')} ${esc(a.name)}</span>`).join('')}</div>` : ''}
         </div></div>`;
     }
@@ -295,13 +309,22 @@
       S.abort = controller;
       let buffer = '';
       const actions = [];
+      const seenActions = new Set();
+      const pushAction = (a) => {
+        if (!a) return;
+        const key = a.document_id || a.id
+          || (a.type === 'terminal' ? `term:${a.command || ''}|${a.duration_ms || 0}` : '')
+          || JSON.stringify(a).slice(0, 140);
+        if (seenActions.has(key)) return;
+        seenActions.add(key);
+        actions.push(a);
+      };
 
       try {
         await API.chat.send({
           content,
           conversation_id: S.conversationId,
           language: global.I18N.lang,
-          mode: S.mode,
           stream: useStream,
           attachments: uploaded.map((u) => u.id).filter(Boolean),
         }, {
@@ -320,9 +343,9 @@
             } else if (event.event === 'done') {
               buffer = event.text || buffer;
               aiMsg.meta = Object.assign(aiMsg.meta, { engine: event.engine, tokens: event.tokens, latency: event.latency_ms });
-              (event.actions || []).forEach((a) => actions.push(a.result));
+              (event.actions || []).forEach((a) => pushAction(a.result));
             } else if (event.event === 'action' || event.event === 'action_start') {
-              if (event.type) actions.push(event);
+              if (event.type) pushAction(event);
             } else if (event.event === 'error') {
               global.App.toast('err', t('common.error'), event.message || '');
             } else if (event.event === 'notice') {
@@ -344,19 +367,16 @@
       aiMsg.streaming = false;
       const node = stream.lastElementChild;
       node.querySelector('.bubble').innerHTML = md(buffer) + actionCards(actions);
+      API.hydrateImages(node);
       const who = node.querySelector('.who');
       if (aiMsg.meta.tokens && aiMsg.meta.tokens.total) {
         who.insertAdjacentHTML('beforeend', `<span class="muted small" style="font-weight:400">${aiMsg.meta.tokens.total} ${t('chat.tokens')} · ${aiMsg.meta.latency || 0} ${t('chat.ms')}</span>`);
       }
       stream.scrollTop = stream.scrollHeight;
-      node.querySelectorAll('[data-file]').forEach((btn) => btn.addEventListener('click', () => {
-        global.location.href = API.files.url(btn.dataset.file);
-      }));
-      node.querySelectorAll('[data-doc]').forEach((btn) => btn.addEventListener('click', () => {
-        global.location.href = `/api/documents/${btn.dataset.doc}/download`;
-      }));
-      node.querySelectorAll('[data-img]').forEach((btn) => btn.addEventListener('click', () => {
-        global.App.lightbox(API.images.url(btn.dataset.img));
+
+      node.querySelectorAll('[data-img]').forEach((img) => img.addEventListener('click', () => {
+        const s = img.currentSrc || img.src || '';
+        global.App.lightbox(s.indexOf('blob:') === 0 ? s : API.images.url(img.dataset.img));
       }));
       loadConversations();
     }
@@ -365,16 +385,27 @@
   function actionCards(actions) {
     if (!actions || !actions.length) return '';
     return actions.map((a) => {
-      if (!a || a.error) return '';
+      if (!a) return '';
+      if (a.type === 'terminal') {
+        if (a.error === 'no_permission' || a.error === 'empty') {
+          return `<div class="action-card"><div class="ic">${ico('terminal')}</div><div class="txt"><b>${t('chat.termOff')}</b><span>${esc(a.notice || '')}</span></div></div>`;
+        }
+        const out = (a.output || '').replace(/\s+$/, '');
+        const okc = a.exit_code === 0;
+        const inner = out ? esc(out) : esc(a.allowed ? t('chat.termEmpty') : (a.reason || a.notice || t('chat.termEmpty')));
+        const bc = okc ? 'rgba(120,200,140,.35)' : 'rgba(220,120,120,.4)';
+        const code = (a.exit_code === null || a.exit_code === undefined) ? '—' : a.exit_code;
+        return `<div class="action-card term"><div class="ic">${ico('terminal')}</div><div class="txt" style="flex:1;min-width:0"><b>${t('chat.termRan')}: <code style="opacity:.85">${esc(a.command || '')}</code></b><pre style="margin:6px 0 4px;padding:8px 10px;background:rgba(0,0,0,.4);border:1px solid ${bc};border-radius:8px;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;color:#dcdcdc">${inner}</pre><span class="muted small">${t('chat.exit')}: ${code} · ${a.duration_ms || 0} ${t('chat.ms')}</span></div></div>`;
+      }
+      if (a.error) return '';
       if (a.type === 'document' || a.document_id) {
         return `<div class="action-card"><div class="ic">${ico('presentation')}</div><div class="txt"><b>${t('chat.docMade')}: ${esc(a.title || a.name || '')}</b>
           <span>${esc(a.name || '')} · ${fmtBytes(a.size)}</span></div>
           <button class="btn btn-sm btn-outline" data-doc="${esc(a.document_id)}">${t('chat.download')}</button></div>`;
       }
-      if (a.type === 'image' || a.file_id && a.url) {
-        return `<div class="action-card"><div class="ic">${ico('image')}</div><div class="txt"><b>${t('chat.imgMade')}</b>
-          <span>${a.width || ''}×${a.height || ''}</span></div>
-          <button class="btn btn-sm btn-outline" data-img="${esc(a.id)}">${t('common.open')}</button></div>`;
+      if (a.type === 'image' || (a.file_id && a.url)) {
+        const src = a.url || `/api/images/${a.id}/file`;
+        return `<img class="chat-inline-img" data-authsrc="${esc(src)}" data-img="${esc(a.id)}" alt="" loading="lazy" style="display:block;max-width:min(460px,100%);width:auto;height:auto;border-radius:14px;border:1px solid rgba(255,255,255,.09);cursor:zoom-in;box-shadow:0 10px 30px rgba(0,0,0,.45);background:rgba(255,255,255,.04);margin:8px 0">`;
       }
       if (a.type === 'file' || a.id) {
         return `<div class="action-card"><div class="ic">${ico('document')}</div><div class="txt"><b>${t('chat.fileMade')}: ${esc(a.name || '')}</b>
@@ -516,6 +547,7 @@
       }
       if (F.view === 'grid') {
         content.innerHTML = `<div class="file-grid">${F.files.map(cardHtml).join('')}</div>`;
+        API.hydrateImages(content);
       } else {
         content.innerHTML = `<div class="panel" style="padding:0;overflow:hidden">
           <table class="file-table"><thead><tr>
@@ -528,7 +560,7 @@
     function cardHtml(file) {
       const isImage = file.kind === 'image';
       return `<div class="file-card" data-kind="${esc(file.kind)}" data-id="${file.id}">
-        ${isImage ? `<img class="thumb" loading="lazy" src="/api/files/${file.id}/download?inline=true" alt="">` : ''}
+        ${isImage ? `<img class="thumb" loading="lazy" data-authsrc="/api/files/${file.id}/download?inline=true" alt="">` : ''}
         ${file.pinned ? `<div class="pin">${ico('star')}</div>` : ''}
         <div class="fico" ${isImage ? 'style="position:relative;z-index:2;background:rgba(10,11,16,.72)"' : ''}>${iconFor(file.kind)}</div>
         <div class="fname" ${isImage ? 'style="position:relative;z-index:2"' : ''} title="${esc(file.name)}">${esc(file.name)}</div>
@@ -592,12 +624,12 @@
         const meta = await API.files.get(id);
         const url = `/api/files/${id}/download?inline=true`;
         let body = '';
-        if (meta.kind === 'image') body = `<img src="${url}" style="border-radius:14px;width:100%">`;
+        if (meta.kind === 'image') body = `<img data-authsrc="${url}" style="border-radius:14px;width:100%">`;
         else if (meta.mime && meta.mime.startsWith('text/') || ['md', 'code', 'document'].includes(meta.kind)) {
           const res = await fetch(url, { headers: API.headers() });
           const text = await res.text();
           body = `<pre style="max-height:52vh;overflow:auto;background:#080a10;padding:16px;border-radius:12px;border:1px solid var(--line)"><code>${esc(text.slice(0, 60000))}</code></pre>`;
-        } else if (meta.mime === 'application/pdf') body = `<iframe src="${url}" style="width:100%;height:60vh;border:none;border-radius:12px"></iframe>`;
+        } else if (meta.mime === 'application/pdf') body = `<iframe id="pvPdf" style="width:100%;height:60vh;border:none;border-radius:12px"></iframe>`;
         else body = `<div class="empty"><div class="ico">${iconFor(meta.kind)}</div>${esc(meta.name)}<div class="muted small">${fmtBytes(meta.size)} · ${esc(meta.mime || '')}</div></div>`;
         global.App.openDrawer(`
           <h2>${esc(meta.name)}</h2>
@@ -610,10 +642,13 @@
           </dl>
           <div class="divider"></div>${body}
           <div style="display:flex;gap:9px;margin-top:18px">
-            <a class="btn btn-gold btn-sm" href="${API.files.url(id)}">${t('common.download')}</a>
+            <a class="btn btn-gold btn-sm" href="#" data-dl="${API.files.url(id)}" data-name="${esc(meta.name)}">${t('common.download')}</a>
             <button class="btn btn-outline btn-sm" id="drPin">${t('dir.pin')}</button>
             <button class="btn btn-danger btn-sm" id="drDel">${t('dir.delete')}</button>
           </div>`);
+        API.hydrateImages(document.getElementById('drawerBody'));
+        const pvPdf = document.getElementById('pvPdf');
+        if (pvPdf) API.blobUrl(url).then((u) => { pvPdf.src = u; }).catch(() => {});
         const pin = document.getElementById('drPin');
         if (pin) pin.addEventListener('click', async () => { await API.files.pin(id, !meta.pinned); global.App.closeDrawer(); load(); });
         const del = document.getElementById('drDel');
@@ -961,7 +996,7 @@
         <div class="chips" style="margin-bottom:14px"><span class="tag">${esc(doc.kind.toUpperCase())}</span>${bits}</div>
         <iframe src="/api/documents/${doc.document_id || doc.id}/preview" style="width:100%;height:56vh;border:1px solid var(--line);border-radius:14px;background:#fff"></iframe>
         <div style="display:flex;gap:9px;margin-top:16px">
-          <a class="btn btn-gold btn-sm" href="/api/documents/${doc.document_id || doc.id}/download">${t('common.download')}</a>
+          <a class="btn btn-gold btn-sm" href="#" data-dl="/api/documents/${doc.document_id || doc.id}/download" data-name="${esc(doc.title || 'document')}">${t('common.download')}</a>
           <button class="btn btn-outline btn-sm" data-rebuild>${t('docs.rebuild')}</button>
         </div>`;
     }
@@ -1095,6 +1130,7 @@
         });
         grid.querySelectorAll('.img-skeleton').forEach((el) => el.parentElement.remove());
         (data.images || []).forEach((img) => grid.insertAdjacentHTML('afterbegin', imgCard(img)));
+        API.hydrateImages(grid);
         wireGrid(grid);
         global.App.toast('ok', t('img.done'), `${(data.images || []).length} × ${S.images.width}×${S.images.height}`);
         if (data.errors && data.errors.length) global.App.toast('warn', 'partial', data.errors[0]);
@@ -1108,7 +1144,7 @@
 
     function imgCard(img) {
       return `<div class="img-card" data-img="${img.id}" data-file="${img.file_id}">
-        <img loading="lazy" src="${API.images.url(img.id)}" alt="">
+        <img loading="lazy" data-authsrc="${API.images.url(img.id)}" alt="">
         <div class="ov"><b>${esc((img.prompt || '').slice(0, 70))}</b><br>${img.width}×${img.height} · ${esc(img.style || '')}</div>
       </div>`;
     }
@@ -1117,7 +1153,9 @@
       scope.querySelectorAll('[data-img]').forEach((el) => {
         el.onclick = (ev) => {
           if (ev.target.dataset && ev.target.dataset.del) return;
-          global.App.lightbox(API.images.url(el.dataset.img));
+          const im = el.tagName === 'IMG' ? el : el.querySelector('img');
+          const cur = im ? (im.currentSrc || im.src || '') : '';
+          global.App.lightbox(cur.indexOf('blob:') === 0 ? cur : API.images.url(el.dataset.img));
         };
       });
     }
@@ -1129,6 +1167,7 @@
         S.images.list = data.images || [];
         if (!S.images.list.length) { grid.innerHTML = emptyState('image', t('img.empty'), ''); return; }
         grid.innerHTML = S.images.list.map(imgCard).join('');
+        API.hydrateImages(grid);
         wireGrid(grid);
       } catch (e) { grid.innerHTML = emptyState('alert', t('common.error'), e.message); }
     }
@@ -1194,7 +1233,7 @@
           ? 'Агент — это небольшая программа, которая работает на вашем компьютере, слушает подписанные команды и выполняет только те действия, которые разрешены выбранным профилем и доверенными папками. В архиве — готовый к запуску агент на Python (Windows, macOS, Linux, без зависимостей), инструкция по сопряжению и пример конфига. Нативная сборка .exe/.app будет доступна в следующем релизе.'
           : 'The agent is a small program that runs on your computer, listens for signed commands and performs only the actions permitted by the chosen profile and trusted folders. The archive contains a ready-to-run Python agent (Windows, macOS, Linux, no dependencies), pairing instructions and a config template. A native .exe/.app build arrives in the next release.'}</p>
         <div style="display:flex;gap:9px;flex-wrap:wrap">
-          <a class="btn btn-outline btn-sm" href="/api/agent/download">${ico('download')} mestinghem-agent.zip</a>
+          <a class="btn btn-outline btn-sm" href="#" data-dl="/api/agent/download" data-name="mestinghem-agent.zip">${ico('download')} mestinghem-agent.zip</a>
           <a class="btn btn-ghost btn-sm" href="#/legal/agent">${t('footer.agent')}</a>
         </div>
       </section>`;

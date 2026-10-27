@@ -49,8 +49,14 @@
   /* ------------------------------------------------------------- lightbox */
   function lightbox(src) {
     const box = document.getElementById('lightbox');
-    box.querySelector('img').src = src;
+    const img = box.querySelector('img');
     box.hidden = false;
+    if (typeof src === 'string' && src.indexOf('blob:') !== 0 && src.indexOf('/api/') === 0) {
+      img.removeAttribute('src');
+      API.blobUrl(src).then((u) => { img.src = u; }).catch(() => { img.alt = '!'; });
+    } else {
+      img.src = src;
+    }
     box.querySelectorAll('[data-close]').forEach((el) => (el.onclick = () => { box.hidden = true; }));
     box.onclick = (ev) => { if (ev.target === box) box.hidden = true; };
   }

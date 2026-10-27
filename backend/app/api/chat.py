@@ -301,7 +301,7 @@ def _agent_footer(language: str) -> str:
             "4. Терминал — одна команда, без sudo, без «..» и без выхода за пределы рабочей области; опасную "
             "команду платформа отклонит, а ты спокойно объяснишь почему. Не запускай бесконечные или фоновые процессы.\n"
             "5. Для картинок prompt всегда на английском и максимально описательный (объект, стиль, свет, детали).\n"
-            "6. Если действий не нужно — просто ответь по-человечески, без блоков.\n"
+            "6. Если действий не нужно — просто ответь по-человечески, без блоков. Не дублируй результат: не пиши отдельно «изображение готово», «файл создан», «команда выполнена» — интерфейс сам покажет картинку, файл и вывод. Достаточно одной короткой живой фразы в настоящем времени.\n"
         )
     return (
         "\n\n## Workspace actions\n"
@@ -320,7 +320,7 @@ def _agent_footer(language: str) -> str:
         "4. Terminal — one command, no sudo, no \"..\", no leaving the workspace; dangerous commands are blocked "
         "and you calmly explain why. Don't start endless or background processes.\n"
         "5. Image prompts are always in English and as descriptive as possible (subject, style, light, details).\n"
-        "6. If no action is needed — just reply like a human, with no blocks.\n"
+        "6. If no action is needed — just reply like a human, with no blocks. Never duplicate the result: don't write «image is ready», «file created», «command finished» — the interface shows the image, file and output itself. One short present-tense phrase is enough.\n"
     )
 
 
@@ -465,6 +465,23 @@ async def _register_image(
 # ---------------------------------------------------------------------------
 # Sending
 # ---------------------------------------------------------------------------
+_ACTION_META_KEYS = (
+    "type", "id", "file_id", "url", "document_id", "name", "title", "size",
+    "width", "height", "style", "command", "exit_code", "output",
+    "duration_ms", "allowed", "error", "notice", "reason",
+)
+
+
+def _compact_action(entry: dict[str, Any]) -> dict[str, Any]:
+    """Small, renderable slice of an executed action, stored in message meta."""
+    res = entry.get("result") or {}
+    out = {k: res[k] for k in _ACTION_META_KEYS if res.get(k) is not None}
+    out["action"] = entry.get("action")
+    if out.get("output"):
+        out["output"] = str(out["output"])[-1500:]
+    return out
+
+
 async def _persist(
     user: dict[str, Any],
     conversation_id: str,
@@ -625,7 +642,7 @@ async def _stream_reply(
     await _persist(
         user, conversation_id, "assistant", clean_visible,
         tokens=tokens, latency=latency,
-        meta={"engine": engine, "mode": body.mode, "actions": [e["action"] for e in executed]},
+        meta={"engine": engine, "mode": body.mode, "actions": [_compact_action(e) for e in executed]},
     )
     await db.execute(
         "update users set last_seen_at = $1 where id = $2", utcnow(), user["id"]

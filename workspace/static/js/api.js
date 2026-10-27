@@ -183,12 +183,34 @@
   }
 
   /* ------------------------------------------------------------------ api */
+  async function blobUrl(path) {
+    let res = await fetch(path, { headers: headers({ 'Accept': '*/*' }) });
+    if (res.status === 401 && state.refresh) {
+      const ok = await refresh();
+      if (ok) res = await fetch(path, { headers: headers({ 'Accept': '*/*' }) });
+    }
+    if (!res.ok) throw new ApiError('media load failed', res.status);
+    return URL.createObjectURL(await res.blob());
+  }
+
+  function hydrateImages(scope) {
+    const root = scope || document;
+    root.querySelectorAll('img[data-authsrc]').forEach((img) => {
+      const st = img.dataset.authstate;
+      if (st === 'loading' || st === 'done') return;
+      img.dataset.authstate = 'loading';
+      blobUrl(img.dataset.authsrc)
+        .then((u) => { img.src = u; img.dataset.authstate = 'done'; })
+        .catch(() => { img.dataset.authstate = 'error'; img.classList.add('img-error'); });
+    });
+  }
+
   const api = {
     ApiError,
     get user() { return state.user; },
     get access() { return state.access; },
     get isAuthenticated() { return Boolean(state.access && state.user); },
-    on, save, clear, refresh, request, stream, ws, headers,
+    on, save, clear, refresh, request, stream, ws, headers, blobUrl, hydrateImages,
 
     config: async () => {
       if (state.config) return state.config;
