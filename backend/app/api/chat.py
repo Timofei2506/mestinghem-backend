@@ -123,10 +123,7 @@ async def list_conversations(
         "conversations": [
             {**r, "pinned": bool(r["pinned"]), "archived": bool(r["archived"])} for r in rows.rows
         ],
-        "modes": [
-            {"id": key, "label": value.get("ru" if (user.get("language") or "ru") == "ru" else "en")}
-            for key, value in MODE_LABEL.items()
-        ],
+        "modes": [],
     }
 
 
@@ -283,9 +280,106 @@ def _action_footer(language: str) -> str:
     )
 
 
+def _agent_footer(language: str) -> str:
+    """Agentic capabilities — the model acts via fenced mst-action blocks (parsed & stripped server-side)."""
+    if language.lower().startswith("ru"):
+        return (
+            "\n\n## Действия в рабочей области\n"
+            "Ты умеешь сам выполнять действия. Когда это нужно, добавь в ответ один или несколько блоков "
+            "(не больше 4) строго в формате:\n"
+            "```mst-action\n{ ...валидный JSON... }\n```\n"
+            "Доступные действия:\n"
+            "• Картинка: {\"action\":\"generate_image\",\"prompt\":\"подробное описание ВСЕГДА на английском\",\"style\":\"photo|cinema|neon|3d|logo|luxury|none\",\"width\":1024,\"height\":1024}\n"
+            "• Терминал: {\"action\":\"run_terminal\",\"command\":\"одна команда bash\"}\n"
+            "• Файл: {\"action\":\"save_file\",\"name\":\"имя_с_расширением\",\"content\":\"полное содержимое\",\"folder\":\"Проекты\"}\n"
+            "• Документ: {\"action\":\"create_document\",\"kind\":\"docx|xlsx|pptx|md|html\",\"title\":\"название\",\"brief\":\"подробное ТЗ на 2-5 предложений\",\"folder\":\"Проекты\"}\n"
+            "Правила:\n"
+            "1. Пиши живым языком и естественно объявляй, что делаешь, но содержимое блоков словами не "
+            "пересказывай и сами блоки не показывай — платформа выполнит их сама.\n"
+            "2. Каждый блок — отдельный валидный JSON: строки в двойных кавычках, без trailing comma, без комментариев.\n"
+            "3. Никогда не выдумывай результат: платформа вернёт реальный вывод терминала, файл или картинку.\n"
+            "4. Терминал — одна команда, без sudo, без «..» и без выхода за пределы рабочей области; опасную "
+            "команду платформа отклонит, а ты спокойно объяснишь почему. Не запускай бесконечные или фоновые процессы.\n"
+            "5. Для картинок prompt всегда на английском и максимально описательный (объект, стиль, свет, детали).\n"
+            "6. Если действий не нужно — просто ответь по-человечески, без блоков.\n"
+        )
+    return (
+        "\n\n## Workspace actions\n"
+        "You can act on your own. When needed, add one or more blocks (max 4) to your reply, strictly as:\n"
+        "```mst-action\n{ ...valid JSON... }\n```\n"
+        "Available actions:\n"
+        "• Image: {\"action\":\"generate_image\",\"prompt\":\"detailed description ALWAYS in English\",\"style\":\"photo|cinema|neon|3d|logo|luxury|none\",\"width\":1024,\"height\":1024}\n"
+        "• Terminal: {\"action\":\"run_terminal\",\"command\":\"a single bash command\"}\n"
+        "• File: {\"action\":\"save_file\",\"name\":\"name_with_extension\",\"content\":\"full contents\",\"folder\":\"Projects\"}\n"
+        "• Document: {\"action\":\"create_document\",\"kind\":\"docx|xlsx|pptx|md|html\",\"title\":\"title\",\"brief\":\"detailed 2-5 sentence spec\",\"folder\":\"Projects\"}\n"
+        "Rules:\n"
+        "1. Write naturally and announce what you're doing like a human, but never narrate the block contents "
+        "or show the blocks — the platform runs them for you.\n"
+        "2. Each block is separate, valid JSON: double-quoted strings, no trailing commas, no comments.\n"
+        "3. Never fabricate results: the platform returns the real terminal output, file or image.\n"
+        "4. Terminal — one command, no sudo, no \"..\", no leaving the workspace; dangerous commands are blocked "
+        "and you calmly explain why. Don't start endless or background processes.\n"
+        "5. Image prompts are always in English and as descriptive as possible (subject, style, light, details).\n"
+        "6. If no action is needed — just reply like a human, with no blocks.\n"
+    )
+
+
+async def _resolve_folder(user_id: str, want: str | None, default_name: str) -> str | None:
+    """Find-or-create a folder by name; return its id (None = workspace root)."""
+    name = (want or default_name or "").strip().strip("/")
+    if not name:
+        return None
+    name = (name.split("/")[-1][:60] or default_name)
+    row = await db.fetch(
+        "select id from folders where user_id = $1 and lower(name) = lower($2) and trashed = false limit 1",
+        user_id, name,
+    ).first()
+    if row:
+        return row["id"]
+    try:
+        created = await file_service.create_folder(user_id, name)
+        return created.get("id")
+    except Exception:
+        return None
+
+
 async def _execute_action(action: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
     kind = str(action.get("action") or "").lower()
     language = user.get("language") or "ru"
+
+    if kind == "run_terminal":
+        from ..services.terminal_service import terminal_service
+
+        perms = user.get("permissions") or {}
+        staff = user.get("role") in ("owner", "admin")
+        command = str(action.get("command") or "").strip()[:4000]
+        if not staff and not perms.get("terminal"):
+            return {
+                "type": "terminal", "error": "no_permission", "command": command, "output": "",
+                "exit_code": None, "allowed": False,
+                "notice": ("Терминал выключен — включи его в настройках, и я смогу выполнять команды."
+                           if str(language).lower().startswith("ru") else
+                           "Terminal is off — enable it in Settings and I'll be able to run commands."),
+            }
+        if not command:
+            return {"type": "terminal", "error": "empty", "output": "", "exit_code": None, "allowed": False}
+        session = next(
+            (s for s in terminal_service.sessions.values() if s.user_id == user["id"] and s.alive), None
+        )
+        if session is None:
+            session = await terminal_service.open(user["id"], permissions=perms)
+        result = await terminal_service.run(
+            session, command, permissions=perms, timeout=int(action.get("timeout") or 30)
+        )
+        await audit("terminal.command", user_id=user["id"], resource="terminal",
+                    resource_id=session.id, detail={"via": "chat", "command": command[:200]})
+        return {
+            "type": "terminal", "command": command, "allowed": bool(result.get("allowed")),
+            "output": (result.get("output") or "")[-8000:], "exit_code": result.get("exit_code"),
+            "reason": result.get("reason"), "duration_ms": result.get("duration_ms"),
+            "session_id": session.id,
+        }
+
     if kind == "create_document":
         from ..services.documents import document_service
 
@@ -319,16 +413,18 @@ async def _execute_action(action: dict[str, Any], user: dict[str, Any]) -> dict[
             negative=str(action.get("negative") or ""),
         )
         saved = await image_service.save(data, user_id=user["id"], prompt=prompt, meta=meta)
-        record = await _register_image(user["id"], saved, prompt, meta, data)
+        folder_id = await _resolve_folder(user["id"], action.get("folder"), "Изображения")
+        record = await _register_image(user["id"], saved, prompt, meta, data, folder_id=folder_id)
         return {"type": "image", **record}
 
     if kind == "save_file":
         content = str(action.get("content") or "")
         if not content:
             return {"error": "empty content"}
+        folder_id = await _resolve_folder(user["id"], action.get("folder"), "Проекты")
         record = await file_service.save(
             user["id"], name=str(action.get("name") or "note.md"), payload=content.encode("utf-8"),
-            origin="assistant", meta={"created_by": "assistant"},
+            folder_id=folder_id, origin="assistant", meta={"created_by": "assistant"},
         )
         return {"type": "file", **record}
 
@@ -336,7 +432,8 @@ async def _execute_action(action: dict[str, Any], user: dict[str, Any]) -> dict[
 
 
 async def _register_image(
-    user_id: str, saved: Any, prompt: str, meta: dict[str, Any], data: bytes
+    user_id: str, saved: Any, prompt: str, meta: dict[str, Any], data: bytes,
+    *, folder_id: str | None = None,
 ) -> dict[str, Any]:
     file_record = await file_service.save(
         user_id,
@@ -345,6 +442,7 @@ async def _register_image(
         kind="image",
         mime="image/jpeg",
         origin="generated",
+        folder_id=folder_id,
         meta={"prompt": prompt[:900], "style": meta.get("style"), "seed": meta.get("seed")},
         preview={"width": meta.get("width"), "height": meta.get("height")},
         namespace=f"images/{user_id[:12]}",
@@ -427,7 +525,7 @@ async def _stream_reply(
     conversation_id: str,
 ) -> AsyncIterator[str]:
     language = body.language or user.get("language") or "ru"
-    task = MODE_TASK.get(body.mode, "chat")
+    task = "chat"
     verdict = screen_input(body.content, strict=False)
     if not verdict.allowed:
         yield _ndjson("error", code="blocked", message="Запрос отклонён политикой безопасности")
@@ -439,7 +537,7 @@ async def _stream_reply(
     history = await _history(conversation_id)
     messages: list[dict[str, Any]] = list(history)
 
-    system_extra = _mode_instruction(body.mode, language, None) + _action_footer(language)
+    system_extra = _agent_footer(language)
     if body.context:
         system_extra += "\n\nДополнительный контекст от клиента: " + json.dumps(body.context, ensure_ascii=False)[:2000]
     if attachments_block:
@@ -456,26 +554,35 @@ async def _stream_reply(
     tokens = {"prompt": 0, "completion": 0, "total": 0}
     try:
         if body.stream:
+            MARK = "```mst-action"
+            accum = ""
+            sent = 0
             async for piece in ai.stream(
                 task,
                 messages + [{"role": "user", "content": body.content}],
-                system=ai.persona(task if task in ("analyst", "writer", "reason", "fast", "vision") else "chat", language)
-                + "\n\n" + system_extra,
+                system=ai.persona("chat", language) + "\n\n" + system_extra,
                 language=language,
             ):
-                buffer.append(piece)
-                yield _ndjson("delta", text=piece)
+                accum += piece
+                cut = accum.find(MARK)
+                # Stream only what precedes an action fence; hold back a tail that
+                # could still turn into the marker split across chunks.
+                visible_upto = cut if cut != -1 else max(sent, len(accum) - (len(MARK) - 1))
+                if visible_upto > sent:
+                    yield _ndjson("delta", text=accum[sent:visible_upto])
+                    sent = visible_upto
                 if await request.is_disconnected():
                     break
-            text = "".join(buffer)
+            if accum.find(MARK) == -1 and len(accum) > sent:
+                yield _ndjson("delta", text=accum[sent:])
+            text = accum
             tokens = {"completion": max(1, len(text) // 4), "prompt": len(body.content) // 4,
                       "total": max(1, (len(text) + len(body.content)) // 4)}
         else:
             reply = await ai.complete(
                 task,
                 messages + [{"role": "user", "content": body.content}],
-                system=ai.persona(task if task in ("analyst", "writer", "reason", "fast", "vision") else "chat", language)
-                + "\n\n" + system_extra,
+                system=ai.persona("chat", language) + "\n\n" + system_extra,
                 language=language,
             )
             text = reply.text
@@ -499,7 +606,7 @@ async def _stream_reply(
     executed: list[dict[str, Any]] = []
     if actions_found:
         visible = ACTION_RE.sub("", text).strip()
-        for raw in actions_found[:1]:
+        for raw in actions_found[:4]:
             try:
                 action = json.loads(raw)
             except json.JSONDecodeError:
