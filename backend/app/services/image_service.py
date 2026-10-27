@@ -56,7 +56,23 @@ ENGINES: dict[str, dict[str, Any]] = {
         "note": {"ru": "Живописный, иллюстративный стиль", "en": "Painterly illustration"},
         "max_side": 1024,
     },
+    "mst-diffusion-portrait": {
+        "model": "horde:Juggernaut XL",
+        "label": {"ru": "Портрет", "en": "Portrait"},
+        "note": {"ru": "Фотореализм и лица крупным планом", "en": "Photorealism and close-up faces"},
+        "max_side": 1024,
+    },
+    "mst-diffusion-classic": {
+        "model": "horde:Deliberate",
+        "label": {"ru": "Классика", "en": "Classic"},
+        "note": {"ru": "Классическая живопись и иллюстрация", "en": "Classic painting and illustration"},
+        "max_side": 1024,
+    },
 }
+
+# Distributed open-model pool used when the primary backend is saturated.
+HORDE_API = "https://aihorde.net/api/v2"
+HORDE_POOL = ("Juggernaut XL", "Deliberate", "AlbedoBase XL (SDXL)", "stable_diffusion")
 DEFAULT_ENGINE = "mst-diffusion-v1"
 
 # Styles map a friendly name onto prompt modifiers — the user never has to
@@ -232,9 +248,65 @@ class ImageService:
 
     async def _fetch(self, prompt: str, width: int, height: int, seed: int, model: str) -> bytes:
         """Dispatch to the configured generation backend."""
+        if model.startswith("horde:"):
+            return await self._fetch_horde(prompt, width, height, seed, model.split(":", 1)[1])
         if model.startswith("@cf/") or settings.image_provider.lower() == "neural":
-            return await self._fetch_neural(prompt, width, height, seed, model)
+            try:
+                return await self._fetch_neural(prompt, width, height, seed, model)
+            except ImageError as exc:
+                # primary backend saturated or down — fall back to the pool
+                log.warning("neural backend unavailable (%s) — using pool", exc)
+                return await self._fetch_horde(prompt, width, height, seed, "")
         return await self._fetch_open(prompt, width, height, seed, model)
+
+    async def _fetch_horde(self, prompt: str, width: int, height: int, seed: int, model: str) -> bytes:
+        """Open-model pool: asynchronous job, then download the finished render."""
+        names = [model] if model else list(HORDE_POOL)
+        side = max(256, min(1024, max(width, height)))
+        side = min(side, 1024)
+        deadline = time.monotonic() + max(45, min(self.timeout, 180))
+        headers = {
+            "Content-Type": "application/json", "Accept": "application/json",
+            "apikey": settings.image_horde_key or "0000000000",
+            "Client-Agent": "mestinghem:1.0:image",
+        }
+        async with httpx.AsyncClient(timeout=httpx.Timeout(45, connect=15), follow_redirects=True) as client:
+            job_id = ""
+            for name in names + [""]:
+                body = {
+                    "prompt": prompt[:900],
+                    "params": {"width": side, "height": side, "steps": 24, "n": 1, "cfg_scale": 6.5},
+                    "models": [name] if name else [],
+                    "r2": True,
+                }
+                try:
+                    resp = await client.post(f"{HORDE_API}/generate/async", json=body, headers=headers)
+                    if resp.status_code in (200, 202):
+                        job_id = (resp.json() or {}).get("id") or ""
+                        if job_id:
+                            break
+                except Exception:
+                    continue
+            if not job_id:
+                raise ImageError("pool rejected the request")
+            while time.monotonic() < deadline:
+                await asyncio.sleep(4)
+                check = await client.get(f"{HORDE_API}/generate/check/{job_id}", headers=headers)
+                state = check.json() if check.status_code == 200 else {}
+                if state.get("faulted"):
+                    raise ImageError("pool job failed")
+                if not state.get("done"):
+                    continue
+                status_resp = await client.get(f"{HORDE_API}/generate/status/{job_id}", headers=headers)
+                generations = (status_resp.json() or {}).get("generations") or []
+                if not generations:
+                    raise ImageError("pool returned no image")
+                image_resp = await client.get(generations[0]["img"], headers={"User-Agent": "mestinghem/1.0"})
+                data = image_resp.content
+                if not _looks_like_image(data):
+                    raise ImageError("pool returned no usable image")
+                return self._normalise(data, width, height)
+        raise ImageError("pool timed out")
 
     async def _fetch_neural(self, prompt: str, width: int, height: int, seed: int, model: str) -> bytes:
         """Managed neural image backend — clean renders, no third-party marks."""

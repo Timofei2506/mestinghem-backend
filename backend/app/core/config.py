@@ -111,6 +111,7 @@ class Settings:
     image_steps: int = _int("IMAGE_STEPS", 6)
     image_ai_account: str = _env("CF_AI_ACCOUNT_ID", _env("CF_ACCOUNT_ID", ""))
     image_ai_token: str = _env("CF_AI_TOKEN", _env("CF_API_TOKEN", ""))
+    image_horde_key: str = _env("IMAGE_HORDE_KEY", "")
 
     # --- engines ------------------------------------------------------
     chess_engine_path: str = _env(
