@@ -28,11 +28,17 @@ class GenerateBody(BaseModel):
     seed: int | None = None
     variations: int = Field(default=1, ge=1, le=4)
     folder_id: str | None = None
+    engine: str | None = Field(default=None, max_length=48)
 
 
 @router.get("/styles")
 async def styles(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     return {"styles": image_service.styles(user.get("language") or "ru")}
+
+
+@router.get("/engines")
+async def engines(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+    return {"engines": image_service.engines(user.get("language") or "ru")}
 
 
 async def _generate(body: GenerateBody, user: dict[str, Any]) -> dict[str, Any]:
@@ -54,6 +60,7 @@ async def _generate(body: GenerateBody, user: dict[str, Any]) -> dict[str, Any]:
                 seed=seed,
                 language=language,
                 negative=body.negative,
+                model=body.engine,
             )
         except ImageError as exc:
             errors.append(str(exc)[:160])
@@ -83,7 +90,7 @@ async def _generate(body: GenerateBody, user: dict[str, Any]) -> dict[str, Any]:
                 "prompt": body.prompt[:2000], "negative_prompt": body.negative[:300],
                 "style": body.style, "width": meta.get("width") or body.width,
                 "height": meta.get("height") or body.height, "seed": meta.get("seed") or 0,
-                "provider": "internal", "model": "mst-diffusion-v1", "status": "ready",
+                "provider": "internal", "model": meta.get("engine") or "mst-diffusion-v1", "status": "ready",
                 "duration_ms": 0, "created_at": utcnow(),
             },
         )
@@ -99,6 +106,7 @@ async def _generate(body: GenerateBody, user: dict[str, Any]) -> dict[str, Any]:
                 "height": meta.get("height"),
                 "seed": meta.get("seed"),
                 "size": file_record["size"],
+                "engine": meta.get("engine") or "mst-diffusion-v1",
             }
         )
 
@@ -107,7 +115,8 @@ async def _generate(body: GenerateBody, user: dict[str, Any]) -> dict[str, Any]:
                             errors[0] if errors else "Генерация недоступна, попробуйте позже")
     await audit("image.generate", user_id=user["id"], resource="image",
                 resource_id=results[0]["id"], detail={"style": body.style, "count": len(results)})
-    return {"images": results, "errors": errors, "engine": "mst-diffusion-v1"}
+    engine_label = (results[0].get("engine") if results else None) or "mst-diffusion-v1"
+    return {"images": results, "errors": errors, "engine": engine_label}
 
 
 @router.post("/generate", status_code=status.HTTP_201_CREATED)

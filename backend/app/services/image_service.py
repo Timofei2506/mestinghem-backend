@@ -29,6 +29,36 @@ ENDPOINT = "https://image.pollinations.ai/prompt/{prompt}"
 AI_GATEWAY = "https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}"
 MAX_SIDE = 2048
 
+# Public engine catalogue. Clients only ever see our own names — the underlying
+# open models are an implementation detail of the platform.
+ENGINES: dict[str, dict[str, Any]] = {
+    "mst-diffusion-v1": {
+        "model": "@cf/black-forest-labs/flux-1-schnell",
+        "label": {"ru": "Стандарт", "en": "Standard"},
+        "note": {"ru": "Универсальный движок — баланс скорости и качества", "en": "Balanced all-round engine"},
+        "max_side": 2048,
+    },
+    "mst-diffusion-pro": {
+        "model": "@cf/leonardo/phoenix-1.0",
+        "label": {"ru": "Студия", "en": "Studio"},
+        "note": {"ru": "Максимальная детализация и свет", "en": "Highest detail and lighting"},
+        "max_side": 1024,
+    },
+    "mst-diffusion-fast": {
+        "model": "@cf/bytedance/stable-diffusion-xl-lightning",
+        "label": {"ru": "Быстрый", "en": "Fast"},
+        "note": {"ru": "Мгновенный результат для набросков", "en": "Instant drafts"},
+        "max_side": 1024,
+    },
+    "mst-diffusion-art": {
+        "model": "@cf/lykon/dreamshaper-8-lcm",
+        "label": {"ru": "Арт", "en": "Art"},
+        "note": {"ru": "Живописный, иллюстративный стиль", "en": "Painterly illustration"},
+        "max_side": 1024,
+    },
+}
+DEFAULT_ENGINE = "mst-diffusion-v1"
+
 # Styles map a friendly name onto prompt modifiers — the user never has to
 # write prompt engineering to get a premium-looking result.
 STYLES: dict[str, dict[str, str]] = {
@@ -132,6 +162,14 @@ def build_prompt(prompt: str, style: str = "none", *, language: str = "ru", enha
     return ", ".join(part for part in (base, modifier, tail) if part)
 
 
+def _engine_key(model: str) -> str:
+    """Map a real model id back to its public catalogue name."""
+    for name, spec in ENGINES.items():
+        if spec["model"] == model:
+            return name
+    return DEFAULT_ENGINE
+
+
 class ImageService:
     timeout = settings.image_timeout
 
@@ -154,7 +192,22 @@ class ImageService:
         if negative.strip():
             full_prompt = f"{full_prompt}, avoid: {negative.strip()[:200]}"
         seed = seed if seed is not None else int(hashlib.sha256(full_prompt.encode()).hexdigest()[:8], 16) % 2**31
-        engines = [model or settings.image_model, settings.image_fallback_model]
+        # Resolve the requested engine (public name or raw model id) and build a
+        # fallback chain from the rest of the catalogue.
+        requested = (model or "").strip()
+        chain: list[str] = []
+        if requested in ENGINES:
+            chain.append(ENGINES[requested]["model"])
+        elif requested:
+            chain.append(requested)
+        else:
+            chain.append(settings.image_model)
+        for name, spec in ENGINES.items():
+            if spec["model"] not in chain:
+                chain.append(spec["model"])
+        if settings.image_fallback_model and settings.image_fallback_model not in chain:
+            chain.append(settings.image_fallback_model)
+        engines = chain
         seen: set[str] = set()
         last_error: Exception | None = None
 
@@ -170,7 +223,7 @@ class ImageService:
                     "width": width,
                     "height": height,
                     "seed": seed,
-                    "engine": "internal-diffusion",
+                    "engine": _engine_key(engine),
                 }
             except Exception as exc:
                 last_error = exc
@@ -291,6 +344,19 @@ class ImageService:
             mime=stored.mime,
             duration_ms=int((time.perf_counter() - started) * 1000),
         )
+
+    def engines(self, language: str = "ru") -> list[dict[str, Any]]:
+        key = "ru" if language.lower().startswith("ru") else "en"
+        out = []
+        for name, spec in ENGINES.items():
+            out.append({
+                "id": name,
+                "label": spec["label"][key],
+                "note": spec["note"][key],
+                "default": name == DEFAULT_ENGINE,
+                "max_side": spec["max_side"],
+            })
+        return out
 
     def styles(self, language: str = "ru") -> list[dict[str, str]]:
         key = "ru" if language.lower().startswith("ru") else "en"

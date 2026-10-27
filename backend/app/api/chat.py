@@ -289,7 +289,7 @@ def _agent_footer(language: str) -> str:
             "(не больше 4) строго в формате:\n"
             "```mst-action\n{ ...валидный JSON... }\n```\n"
             "Доступные действия:\n"
-            "• Картинка: {\"action\":\"generate_image\",\"prompt\":\"подробное описание ВСЕГДА на английском\",\"style\":\"photo|cinema|neon|3d|logo|luxury|none\",\"width\":1024,\"height\":1024}\n"
+            "• Картинка: {\"action\":\"generate_image\",\"prompt\":\"подробное описание ВСЕГДА на английском\",\"style\":\"photo|cinema|neon|3d|logo|luxury|none\",\"engine\":\"mst-diffusion-v1|mst-diffusion-pro|mst-diffusion-fast|mst-diffusion-art\",\"width\":1024,\"height\":1024}\n"
             "• Терминал: {\"action\":\"run_terminal\",\"command\":\"одна команда bash\"}\n"
             "• Файл: {\"action\":\"save_file\",\"name\":\"имя_с_расширением\",\"content\":\"полное содержимое\",\"folder\":\"Проекты\"}\n"
             "• Документ: {\"action\":\"create_document\",\"kind\":\"docx|xlsx|pptx|md|html\",\"title\":\"название\",\"brief\":\"подробное ТЗ на 2-5 предложений\",\"folder\":\"Проекты\"}\n"
@@ -301,14 +301,15 @@ def _agent_footer(language: str) -> str:
             "4. Терминал — одна команда, без sudo, без «..» и без выхода за пределы рабочей области; опасную "
             "команду платформа отклонит, а ты спокойно объяснишь почему. Не запускай бесконечные или фоновые процессы.\n"
             "5. Для картинок prompt всегда на английском и максимально описательный (объект, стиль, свет, детали).\n"
-            "6. Если действий не нужно — просто ответь по-человечески, без блоков. Не дублируй результат: не пиши отдельно «изображение готово», «файл создан», «команда выполнена» — интерфейс сам покажет картинку, файл и вывод. Достаточно одной короткой живой фразы в настоящем времени.\n"
+            "6. Если действий не нужно — просто ответь по-человечески, без блоков. Не дублируй результат: не пиши отдельно «изображение готово», «файл создан», «команда выполнена» — интерфейс сам покажет картинку, файл и вывод. Достаточно одной короткой живой фразы в настоящем времени. "
+            "Не пиши «вот твой …» и не описывай готовый результат — он появится под сообщением сам.\n"
         )
     return (
         "\n\n## Workspace actions\n"
         "You can act on your own. When needed, add one or more blocks (max 4) to your reply, strictly as:\n"
         "```mst-action\n{ ...valid JSON... }\n```\n"
         "Available actions:\n"
-        "• Image: {\"action\":\"generate_image\",\"prompt\":\"detailed description ALWAYS in English\",\"style\":\"photo|cinema|neon|3d|logo|luxury|none\",\"width\":1024,\"height\":1024}\n"
+        "• Image: {\"action\":\"generate_image\",\"prompt\":\"detailed description ALWAYS in English\",\"style\":\"photo|cinema|neon|3d|logo|luxury|none\",\"engine\":\"mst-diffusion-v1|mst-diffusion-pro|mst-diffusion-fast|mst-diffusion-art\",\"width\":1024,\"height\":1024}\n"
         "• Terminal: {\"action\":\"run_terminal\",\"command\":\"a single bash command\"}\n"
         "• File: {\"action\":\"save_file\",\"name\":\"name_with_extension\",\"content\":\"full contents\",\"folder\":\"Projects\"}\n"
         "• Document: {\"action\":\"create_document\",\"kind\":\"docx|xlsx|pptx|md|html\",\"title\":\"title\",\"brief\":\"detailed 2-5 sentence spec\",\"folder\":\"Projects\"}\n"
@@ -320,7 +321,7 @@ def _agent_footer(language: str) -> str:
         "4. Terminal — one command, no sudo, no \"..\", no leaving the workspace; dangerous commands are blocked "
         "and you calmly explain why. Don't start endless or background processes.\n"
         "5. Image prompts are always in English and as descriptive as possible (subject, style, light, details).\n"
-        "6. If no action is needed — just reply like a human, with no blocks. Never duplicate the result: don't write «image is ready», «file created», «command finished» — the interface shows the image, file and output itself. One short present-tense phrase is enough.\n"
+        "6. If no action is needed — just reply like a human, with no blocks. Never duplicate the result: don't write «image is ready», «file created», «command finished» — the interface shows the image, file and output itself. One short present-tense phrase is enough. Never say «here is your …» or describe the finished result — it appears under the message by itself.\n"
     )
 
 
@@ -411,6 +412,7 @@ async def _execute_action(action: dict[str, Any], user: dict[str, Any]) -> dict[
             style=str(action.get("style") or "none"),
             language=language,
             negative=str(action.get("negative") or ""),
+            model=(str(action.get("engine") or "").strip() or None),
         )
         saved = await image_service.save(data, user_id=user["id"], prompt=prompt, meta=meta)
         folder_id = await _resolve_folder(user["id"], action.get("folder"), "Изображения")
