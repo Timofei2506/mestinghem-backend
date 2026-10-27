@@ -26,6 +26,7 @@ from .storage_service import storage
 log = logging.getLogger("images")
 
 ENDPOINT = "https://image.pollinations.ai/prompt/{prompt}"
+AI_GATEWAY = "https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}"
 MAX_SIDE = 2048
 
 # Styles map a friendly name onto prompt modifiers — the user never has to
@@ -177,6 +178,50 @@ class ImageService:
         raise ImageError(f"generation failed: {last_error}")
 
     async def _fetch(self, prompt: str, width: int, height: int, seed: int, model: str) -> bytes:
+        """Dispatch to the configured generation backend."""
+        if model.startswith("@cf/") or settings.image_provider.lower() == "neural":
+            return await self._fetch_neural(prompt, width, height, seed, model)
+        return await self._fetch_open(prompt, width, height, seed, model)
+
+    async def _fetch_neural(self, prompt: str, width: int, height: int, seed: int, model: str) -> bytes:
+        """Managed neural image backend — clean renders, no third-party marks."""
+        account = settings.image_ai_account.strip()
+        token = settings.image_ai_token.strip()
+        if not account or not token:
+            raise ImageError("image backend is not configured")
+        url = AI_GATEWAY.format(account=account, model=model)
+        body: dict[str, Any] = {"prompt": prompt[:2000]}
+        if "flux" in model:
+            body["steps"] = max(1, min(8, settings.image_steps))
+        else:
+            body["num_steps"] = max(1, min(20, settings.image_steps))
+        read_timeout = max(20, min(self.timeout, 90))
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(read_timeout, connect=15), follow_redirects=True
+        ) as client:
+            response = await client.post(
+                url, json=body,
+                headers={"Authorization": f"Bearer {token}", "Accept": "image/*,application/json"},
+            )
+            ctype = (response.headers.get("content-type") or "").lower()
+            if response.status_code >= 400:
+                raise ImageError(f"upstream {response.status_code}")
+            if "application/json" in ctype:
+                payload = response.json()
+                if not payload.get("success", True):
+                    raise ImageError("upstream rejected the request")
+                encoded = (payload.get("result") or {}).get("image") or ""
+                if not encoded:
+                    raise ImageError("upstream returned no image")
+                import base64 as _b64
+                data = _b64.b64decode(encoded)
+            else:
+                data = response.content
+            if not _looks_like_image(data):
+                raise ImageError("upstream returned no usable image")
+            return self._normalise(data, width, height)
+
+    async def _fetch_open(self, prompt: str, width: int, height: int, seed: int, model: str) -> bytes:
         from urllib.parse import quote
 
         url = ENDPOINT.format(prompt=quote(prompt[:900], safe=""))

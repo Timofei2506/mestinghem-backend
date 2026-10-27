@@ -104,10 +104,13 @@ class Settings:
     max_context_messages: int = _int("MAX_CONTEXT_MESSAGES", 40)
 
     # --- vision / creative -------------------------------------------
-    image_provider: str = _env("IMAGE_PROVIDER", "open")
-    image_model: str = _env("IMAGE_MODEL", "flux")
+    image_provider: str = _env("IMAGE_PROVIDER", "cloudflare")
+    image_model: str = _env("IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell")
     image_timeout: int = _int("IMAGE_TIMEOUT", 150)
-    image_fallback_model: str = _env("IMAGE_FALLBACK_MODEL", "turbo")
+    image_fallback_model: str = _env("IMAGE_FALLBACK_MODEL", "@cf/stabilityai/stable-diffusion-xl-base-1.0")
+    image_steps: int = _int("IMAGE_STEPS", 6)
+    image_ai_account: str = _env("CF_AI_ACCOUNT_ID", _env("CF_ACCOUNT_ID", ""))
+    image_ai_token: str = _env("CF_AI_TOKEN", _env("CF_API_TOKEN", ""))
 
     # --- engines ------------------------------------------------------
     chess_engine_path: str = _env(
