@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ru" data-theme="aurum">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07080d">
+<meta name="description" content="Mestinghem AI — автономная рабочая платформа: аналитика, документы, изображения, терминал, шахматы и управление рабочей станцией.">
+<meta property="og:title" content="Mestinghem AI">
+<meta property="og:description" content="Enterprise AI workspace. Think. Build. Decide.">
+<meta property="og:type" content="website">
+<title>Mestinghem AI — автономная рабочая платформа</title>
+<link rel="icon" href="/static/media/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+
+<!-- ───────────────────────── ambient layers ───────────────────────── -->
+<div class="ambient" aria-hidden="true">
+  <canvas id="aurora"></canvas>
+  <div class="grain"></div>
+  <div class="vignette"></div>
+  <div class="orbit orbit-1"></div>
+  <div class="orbit orbit-2"></div>
+</div>
+
+<div class="boot" id="boot">
+  <div class="boot-mark">
+    <svg viewBox="0 0 64 64" class="boot-glyph" aria-hidden="true">
+      <defs><linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#e8c87e"/><stop offset="1" stop-color="#8a6d2f"/></linearGradient></defs>
+      <path d="M32 4 L58 18 V46 L32 60 L6 46 V18 Z" fill="none" stroke="url(#bg1)" stroke-width="2"/>
+      <path d="M20 44 V22 L32 34 L44 22 V44" fill="none" stroke="url(#bg1)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="boot-bar"><span></span></div>
+    <div class="boot-text" data-i18n="boot">Инициализация защищённой среды…</div>
+  </div>
+</div>
+
+<!-- ───────────────────────── landing ───────────────────────── -->
+<main id="landing" class="landing" hidden>
+  <header class="nav">
+    <a class="brand" href="#/" data-nav="home">
+      <svg viewBox="0 0 64 64" class="brand-glyph" aria-hidden="true">
+        <path d="M32 4 L58 18 V46 L32 60 L6 46 V18 Z" fill="none" stroke="currentColor" stroke-width="3"/>
+        <path d="M20 44 V22 L32 34 L44 22 V44" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="brand-name">Mestinghem<em>AI</em></span>
+    </a>
+    <nav class="nav-links">
+      <a href="#/platform" data-i18n="nav.platform">Платформа</a>
+      <a href="#/chess" data-i18n="nav.chess">Шахматы</a>
+      <a href="#/security" data-i18n="nav.security">Безопасность</a>
+      <a href="#/pricing" data-i18n="nav.pricing">Тарифы</a>
+      <a href="#/legal" data-i18n="nav.legal">Документы</a>
+    </nav>
+    <div class="nav-actions">
+      <button class="lang-toggle" id="langToggle" title="RU / EN">
+        <span class="lang-opt" data-lang="ru">RU</span><span class="lang-sep">/</span><span class="lang-opt" data-lang="en">EN</span>
+      </button>
+      <button class="btn btn-ghost" id="btnLogin" data-i18n="nav.login">Войти</button>
+      <button class="btn btn-gold magnetic" id="btnStart" data-i18n="nav.start">Начать работу</button>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow reveal">
+        <span class="dot"></span><span data-i18n="hero.eyebrow">Автономная рабочая платформа · v1.0</span>
+      </div>
+      <h1 class="hero-title reveal">
+        <span class="line" data-i18n="hero.t1">Думает.</span>
+        <span class="line" data-i18n="hero.t2">Строит.</span>
+        <span class="line gold" data-i18n="hero.t3">Решает.</span>
+      </h1>
+      <p class="hero-sub reveal" data-i18n="hero.sub">
+        Один интерфейс вместо десятка инструментов: аналитика, документы, презентации, таблицы,
+        генерация изображений, терминал, шахматный анализ и управление вашей рабочей станцией —
+        под полным контролем и с полным журналом действий.
+      </p>
+      <div class="hero-cta reveal">
+        <button class="btn btn-gold btn-lg magnetic" id="heroStart" data-i18n="hero.cta1">Создать аккаунт</button>
+        <button class="btn btn-outline btn-lg" id="heroTour" data-i18n="hero.cta2">Смотреть платформу</button>
+      </div>
+      <div class="hero-metrics reveal">
+        <div class="metric"><b data-count="6">0</b><span data-i18n="hero.m1">рабочих модулей</span></div>
+        <div class="metric"><b data-count="2">0</b><span data-i18n="hero.m2">языка интерфейса</span></div>
+        <div class="metric"><b data-count="21">0</b><span data-i18n="hero.m3">таблиц аудита</span></div>
+        <div class="metric"><b data-count="100">0</b><span>%</span><span data-i18n="hero.m4">журналирование</span></div>
+      </div>
+    </div>
+    <div class="hero-visual reveal">
+      <div class="glass-card tilt">
+        <div class="gc-head">
+          <span class="gc-dot r"></span><span class="gc-dot y"></span><span class="gc-dot g"></span>
+          <span class="gc-title">mestinghem · workspace</span>
+        </div>
+        <div class="gc-body">
+          <div class="gc-line"><span class="p">$</span> <span class="t" data-type="analyze">проанализируй рынок и собери презентацию</span></div>
+          <div class="gc-line ai"><span class="avatar">M</span><span class="t" data-type="stream"></span><span class="caret"></span></div>
+          <div class="gc-artifacts">
+            <div class="artifact" data-i18n="hero.a1">Презентация · 12 слайдов</div>
+            <div class="artifact" data-i18n="hero.a2">Модель · 4 листа</div>
+            <div class="artifact" data-i18n="hero.a3">Визуал · 4 кадра</div>
+          </div>
+        </div>
+      </div>
+      <div class="floating-chip chip-1" data-i18n="hero.c1">Терминал в песочнице</div>
+      <div class="floating-chip chip-2" data-i18n="hero.c2">Шахматный анализ</div>
+      <div class="floating-chip chip-3" data-i18n="hero.c3">Агент на вашем ПК</div>
+    </div>
+  </section>
+
+  <section class="section" id="platform">
+    <div class="section-head reveal">
+      <span class="kicker" data-i18n="modules.kicker">Модули</span>
+      <h2 data-i18n="modules.title">Шесть инструментов, одна среда</h2>
+      <p data-i18n="modules.sub">Каждый модуль работает самостоятельно и усиливает остальные: результат анализа сразу становится документом, документ — файлом в вашей директории.</p>
+    </div>
+    <div class="module-grid" id="moduleGrid"></div>
+  </section>
+
+  <section class="section dark" id="security">
+    <div class="section-head reveal">
+      <span class="kicker" data-i18n="sec.kicker">Безопасность</span>
+      <h2 data-i18n="sec.title">Контроль по умолчанию</h2>
+      <p data-i18n="sec.sub">Принцип deny-by-default: ничего не выполняется без вашего явного согласия, а всё выполненное — записано.</p>
+    </div>
+    <div class="security-grid" id="securityGrid"></div>
+  </section>
+
+  <section class="section" id="pricing">
+    <div class="section-head reveal">
+      <span class="kicker" data-i18n="price.kicker">Тарифы</span>
+      <h2 data-i18n="price.title">Прозрачные уровни доступа</h2>
+    </div>
+    <div class="price-grid" id="priceGrid"></div>
+  </section>
+
+  <section class="section cta-band">
+    <div class="reveal">
+      <h2 data-i18n="cta.title">Готовы передать рутину платформе?</h2>
+      <p data-i18n="cta.sub">Аккаунт создаётся за 30 секунд. Данные — в вашей рабочей области, экспорт и удаление доступны в один клик.</p>
+      <button class="btn btn-gold btn-lg magnetic" id="ctaStart" data-i18n="cta.btn">Начать бесплатно</button>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-grid">
+      <div>
+        <div class="brand small"><span class="brand-name">Mestinghem<em>AI</em></span></div>
+        <p class="muted" data-i18n="footer.about">Автономная рабочая платформа для тех, кто принимает решения.</p>
+      </div>
+      <div>
+        <h4 data-i18n="footer.product">Продукт</h4>
+        <a href="#/platform" data-i18n="nav.platform">Платформа</a>
+        <a href="#/pricing" data-i18n="nav.pricing">Тарифы</a>
+        <a href="#/chess" data-i18n="nav.chess">Шахматы</a>
+      </div>
+      <div>
+        <h4 data-i18n="footer.legal">Документы</h4>
+        <a href="#/legal/privacy" data-i18n="footer.privacy">Политика конфиденциальности</a>
+        <a href="#/legal/terms" data-i18n="footer.terms">Условия использования</a>
+        <a href="#/legal/security" data-i18n="footer.security">Безопасность</a>
+        <a href="#/legal/agent" data-i18n="footer.agent">Политика управления устройством</a>
+        <a href="#/legal/cookies" data-i18n="footer.cookies">Cookie</a>
+        <a href="#/legal/aup" data-i18n="footer.aup">Допустимое использование</a>
+        <a href="#/legal/dpa" data-i18n="footer.dpa">DPA</a>
+        <a href="#/legal/disclosure" data-i18n="footer.disclosure">Раскрытие уязвимостей</a>
+      </div>
+      <div>
+        <h4 data-i18n="footer.contact">Контакты</h4>
+        <a href="mailto:support@mestinghem.ai">support@mestinghem.ai</a>
+        <a href="mailto:dpo@mestinghem.ai" data-i18n="footer.dpo">DPO: dpo@mestinghem.ai</a>
+        <p class="muted small">Mestinghem AI UAB · Vilnius, Lithuania</p>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© <span id="year">2026</span> Mestinghem AI. <span data-i18n="footer.rights">Все права защищены.</span></span>
+      <span class="status-pill" id="statusPill"><span class="pulse"></span><span data-i18n="footer.status">проверяем статус…</span></span>
+    </div>
+  </footer>
+</main>
+
+<!-- ───────────────────────── auth ───────────────────────── -->
+<div class="modal" id="authModal" hidden>
+  <div class="modal-backdrop" data-close></div>
+  <div class="auth-card glass-card">
+    <button class="modal-x" data-close aria-label="Закрыть">×</button>
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-tab="login" data-i18n="auth.login">Вход</button>
+      <button class="auth-tab" data-tab="register" data-i18n="auth.register">Регистрация</button>
+    </div>
+
+    <form id="loginForm" class="auth-form">
+      <h2 data-i18n="auth.loginTitle">С возвращением</h2>
+      <p class="muted small" data-i18n="auth.loginSub">Войдите, чтобы продолжить работу в защищённой среде.</p>
+      <label class="field"><span data-i18n="auth.email">E-mail или логин</span>
+        <input name="identifier" autocomplete="username" required maxlength="120"></label>
+      <label class="field"><span data-i18n="auth.password">Пароль</span>
+        <div class="pw-wrap"><input name="password" type="password" autocomplete="current-password" required>
+        <button type="button" class="pw-eye" data-toggle-pw data-ico="eye"></button></div></label>
+      <label class="field mfa-field" id="mfaField" hidden><span data-i18n="auth.mfa">Код 2FA</span>
+        <input name="mfa_code" inputmode="numeric" maxlength="6" placeholder="000000"></label>
+      <label class="check"><input type="checkbox" name="remember" checked><span data-i18n="auth.remember">Запомнить устройство</span></label>
+      <button class="btn btn-gold btn-block" type="submit" data-i18n="auth.submit">Войти</button>
+      <div class="auth-error" id="loginError" hidden></div>
+    </form>
+
+    <form id="registerForm" class="auth-form" hidden>
+      <h2 data-i18n="auth.regTitle">Создать аккаунт</h2>
+      <p class="muted small" data-i18n="auth.regSub">Рабочая область, директория и все модули — сразу после регистрации.</p>
+      <label class="field"><span data-i18n="auth.name">Имя</span>
+        <input name="display_name" maxlength="60" placeholder="Alex"></label>
+      <label class="field"><span data-i18n="auth.username">Логин</span>
+        <input name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_.\-]{3,24}" placeholder="alex.k"></label>
+      <label class="field"><span>E-mail</span>
+        <input name="email" type="email" autocomplete="email" required></label>
+      <label class="field"><span data-i18n="auth.password">Пароль</span>
+        <div class="pw-wrap"><input name="password" type="password" autocomplete="new-password" required minlength="10">
+        <button type="button" class="pw-eye" data-toggle-pw data-ico="eye"></button></div>
+        <div class="pw-meter"><span id="pwBar"></span></div>
+        <div class="pw-hint" id="pwHint" data-i18n="auth.pwHint">Минимум 10 символов, смешайте регистр, цифры и знаки.</div>
+      </label>
+      <label class="check"><input type="checkbox" name="accept_terms" required>
+        <span><span data-i18n="auth.acceptTerms">Принимаю</span> <a href="#/legal/terms" target="_blank" data-i18n="footer.terms">Условия использования</a></span></label>
+      <label class="check"><input type="checkbox" name="accept_privacy" required>
+        <span><span data-i18n="auth.acceptPrivacy">Принимаю</span> <a href="#/legal/privacy" target="_blank" data-i18n="footer.privacy">Политику конфиденциальности</a></span></label>
+      <label class="check"><input type="checkbox" name="consent_marketing">
+        <span data-i18n="auth.consentMarketing">Согласен получать сообщения о продукте (можно отключить в любой момент)</span></label>
+      <button class="btn btn-gold btn-block" type="submit" data-i18n="auth.create">Создать аккаунт</button>
+      <div class="auth-error" id="registerError" hidden></div>
+    </form>
+  </div>
+</div>
+
+<!-- ───────────────────────── workspace ───────────────────────── -->
+<div id="workspace" class="workspace" hidden>
+  <aside class="rail" id="rail">
+    <div class="rail-brand">
+      <svg viewBox="0 0 64 64" class="brand-glyph" aria-hidden="true">
+        <path d="M32 4 L58 18 V46 L32 60 L6 46 V18 Z" fill="none" stroke="currentColor" stroke-width="3"/>
+        <path d="M20 44 V22 L32 34 L44 22 V44" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <nav class="rail-nav" id="railNav"></nav>
+    <div class="rail-foot">
+      <button class="rail-btn" id="btnPalette" title="Ctrl+K">⌘K</button>
+      <button class="rail-btn" id="btnLang2">RU/EN</button>
+      <div class="rail-user" id="railUser"></div>
+    </div>
+  </aside>
+
+  <div class="shell">
+    <header class="topbar">
+      <div class="crumbs" id="crumbs"></div>
+      <div class="topbar-right">
+        <div class="engine-pill" id="enginePill" title="Активная конфигурация">
+          <span class="pulse"></span><span id="engineLabel">mst-core</span>
+        </div>
+        <button class="icon-btn" id="btnApprovals" title="Ожидают подтверждения"><span class="ic" data-ico="check"></span><span class="badge" id="approvalBadge" hidden>0</span></button>
+        <button class="icon-btn" id="btnBell" title="Уведомления"><span class="ic" data-ico="bell"></span><span class="badge" id="bellBadge" hidden>0</span></button>
+        <button class="icon-btn" id="btnTheme" title="Тема"><span class="ic" data-ico="contrast"></span></button>
+        <div class="user-chip" id="userChip"></div>
+      </div>
+    </header>
+    <main class="views" id="views"></main>
+  </div>
+</div>
+
+<!-- ───────────────────────── overlays ───────────────────────── -->
+<div class="palette" id="palette" hidden>
+  <div class="palette-backdrop" data-close></div>
+  <div class="palette-box glass-card">
+    <input id="paletteInput" placeholder="Команда, модуль, файл…" autocomplete="off">
+    <div class="palette-list" id="paletteList"></div>
+    <div class="palette-foot"><kbd>↑</kbd><kbd>↓</kbd> <span data-i18n="pal.nav">навигация</span> · <kbd>↵</kbd> <span data-i18n="pal.run">выполнить</span> · <kbd>esc</kbd> <span data-i18n="pal.close">закрыть</span></div>
+  </div>
+</div>
+
+<div class="drawer" id="drawer" hidden>
+  <div class="drawer-backdrop" data-close></div>
+  <div class="drawer-panel glass-card"><div id="drawerBody"></div></div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<div class="lightbox" id="lightbox" hidden><img alt=""><button class="lb-x" data-close>×</button></div>
+
+<script src="/static/js/icons.js"></script>
+<script src="/static/js/i18n.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/landing.js"></script>
+<script src="/static/js/views.js"></script>
+<script src="/static/js/chess.js"></script>
+<script src="/static/js/app.js"></script>
+<script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+</body>
+</html>

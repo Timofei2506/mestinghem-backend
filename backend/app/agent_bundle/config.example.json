@@ -1,0 +1,6 @@
+{
+  "base_url": "https://your-mestinghem-host",
+  "device_id": "dev_xxxxxxxxxxxxxxxxxxxx",
+  "device_key": "PASTE_THE_DEVICE_KEY_SHOWN_ONCE_AT_PAIRING",
+  "poll_interval_seconds": 5
+}
