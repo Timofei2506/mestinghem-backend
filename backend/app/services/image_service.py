@@ -268,52 +268,61 @@ class ImageService:
         return await self._fetch_open(prompt, width, height, seed, model)
 
     async def _fetch_horde(self, prompt: str, width: int, height: int, seed: int, model: str) -> bytes:
-        """Open-model pool: asynchronous job, then download the finished render."""
-        names = [model] if model else list(HORDE_POOL)
+        """Open-model pool: several models race, the first finished render wins."""
+        names = [model] if model else list(HORDE_POOL[:3])
         side = max(256, min(1024, max(width, height)))
-        side = min(side, 1024)
-        deadline = time.monotonic() + max(45, min(self.timeout, 180))
+        deadline = time.monotonic() + max(45, min(self.timeout, 150))
         headers = {
             "Content-Type": "application/json", "Accept": "application/json",
             "apikey": settings.image_horde_key or "0000000000",
             "Client-Agent": "mestinghem:1.0:image",
         }
-        async with httpx.AsyncClient(timeout=httpx.Timeout(45, connect=15), follow_redirects=True) as client:
-            job_id = ""
-            for name in names + [""]:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30, connect=15), follow_redirects=True) as client:
+            jobs: list[str] = []
+            for name in names:
                 body = {
                     "prompt": prompt[:900],
-                    "params": {"width": side, "height": side, "steps": 24, "n": 1, "cfg_scale": 6.5},
-                    "models": [name] if name else [],
+                    "params": {"width": side, "height": side, "steps": 20, "n": 1, "cfg_scale": 6.0},
+                    "models": [name],
                     "r2": True,
                 }
                 try:
                     resp = await client.post(f"{HORDE_API}/generate/async", json=body, headers=headers)
                     if resp.status_code in (200, 202):
-                        job_id = (resp.json() or {}).get("id") or ""
+                        job_id = (resp.json() or {}).get("id")
                         if job_id:
-                            break
+                            jobs.append(job_id)
                 except Exception:
                     continue
-            if not job_id:
+            if not jobs:
                 raise ImageError("pool rejected the request")
+
             while time.monotonic() < deadline:
-                await asyncio.sleep(4)
-                check = await client.get(f"{HORDE_API}/generate/check/{job_id}", headers=headers)
-                state = check.json() if check.status_code == 200 else {}
-                if state.get("faulted"):
-                    raise ImageError("pool job failed")
-                if not state.get("done"):
-                    continue
-                status_resp = await client.get(f"{HORDE_API}/generate/status/{job_id}", headers=headers)
-                generations = (status_resp.json() or {}).get("generations") or []
-                if not generations:
-                    raise ImageError("pool returned no image")
-                image_resp = await client.get(generations[0]["img"], headers={"User-Agent": "mestinghem/1.0"})
-                data = image_resp.content
-                if not _looks_like_image(data):
-                    raise ImageError("pool returned no usable image")
-                return self._normalise(data, width, height)
+                await asyncio.sleep(3)
+                for job_id in list(jobs):
+                    try:
+                        check = await client.get(f"{HORDE_API}/generate/check/{job_id}", headers=headers)
+                        state = check.json() if check.status_code == 200 else {}
+                    except Exception:
+                        continue
+                    if state.get("faulted"):
+                        jobs.remove(job_id)
+                        continue
+                    if not state.get("done"):
+                        continue
+                    try:
+                        status_resp = await client.get(f"{HORDE_API}/generate/status/{job_id}", headers=headers)
+                        generations = (status_resp.json() or {}).get("generations") or []
+                        if not generations:
+                            jobs.remove(job_id)
+                            continue
+                        image_resp = await client.get(generations[0]["img"], headers={"User-Agent": "mestinghem/1.0"})
+                        data = image_resp.content
+                        if _looks_like_image(data):
+                            return self._normalise(data, width, height)
+                    except Exception:
+                        pass
+                    jobs.remove(job_id)
         raise ImageError("pool timed out")
 
     async def _fetch_neural(self, prompt: str, width: int, height: int, seed: int, model: str) -> bytes:

@@ -630,12 +630,27 @@ async def _stream_reply(
                 action = json.loads(raw)
             except json.JSONDecodeError:
                 continue
-            yield _ndjson("action_start", action=action.get("action"))
-            try:
-                result = await _execute_action(action, user)
-            except Exception as exc:
-                log.warning("action failed: %s", exc)
-                result = {"error": str(exc)[:200]}
+            kind = action.get("action")
+            yield _ndjson("action_start", action=kind)
+            # Long jobs (image rendering) keep the stream alive with progress ticks
+            # so proxies don't drop an idle connection.
+            task = asyncio.create_task(_execute_action(action, user))
+            waited = 0
+            while True:
+                try:
+                    result = await asyncio.wait_for(asyncio.shield(task), timeout=8)
+                    break
+                except asyncio.TimeoutError:
+                    waited += 8
+                    if waited > 170:
+                        task.cancel()
+                        result = {"error": "timeout"}
+                        break
+                    yield _ndjson("action_progress", action=kind, elapsed=waited)
+                except Exception as exc:
+                    log.warning("action failed: %s", exc)
+                    result = {"error": str(exc)[:200]}
+                    break
             executed.append({"action": action.get("action"), "result": result})
             yield _ndjson("action", **result)
 
